@@ -1,0 +1,13 @@
+train: ../train/images
+val: ../valid/images
+test: ../test/images
+
+nc: 1
+names: ['fore']
+
+roboflow:
+  workspace: andrei-dore-5lz05
+  project: acne04
+  version: 1
+  license: CC BY 4.0
+  url: https://universe.roboflow.com/andrei-dore-5lz05/acne04/dataset/1
