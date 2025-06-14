@@ -5,7 +5,7 @@ import tkinter as tk
 import cv2 as cv
 
 from ultralytics import YOLO
-import ultralytics as ult
+from ultralytics.utils.plotting import Annotator
 
 from deepface import DeepFace
 from tkinter import filedialog
@@ -15,29 +15,37 @@ from PIL import Image, ImageTk
 
 _BIT_MASK = 0xFF
 
-_BG_COLOR: str = "#121212"
+_DEVICE: str = "cpu"
+
+_BG_COLOR: str = "#1a1919"
 _FG_COLOR: str = "#FFFFFF"
 
+_BOX_COLOR:  tuple = (255, 102, 102)
 _ROOT_RES:   tuple = (1900, 600)
 _FRAME_RES:  tuple = (1000, 800)
 _OUTPUT_RES: tuple = (500, 400)
 _ICON_RES:   tuple = (170, 200)
 
-_DATA_DIR:  tuple = ("dataset", "acne04yolov11")
-_MODEL_DIR: str = "models"
-_IMG_DIR:   str = "faces"
-_ICON_DIR:  str = "icon"
+_DATA_DIR:   tuple = ("dataset", "acne04yolov11")
+_RESUME_MODEL_DIR: tuple = ("runs", "detect", "train", "weights")
+_MODEL_DIR:  str = "models"
+_IMG_DIR:    str = "faces"
+_ICON_DIR:   str = "icon"
+_STREAM_DIR: str = "video"
 
 _DATA_CONFIG_NAME:  str = "data.yaml"
 _MODEL_NAME:        str = "yolo11n.pt"
 _SAVE_MODEL_NAME:   str = "acne.pt"
+_RESUME_MODEL_NAME: str = "last.pt"
 _ICON_NAME:         str = "logo.png"
 _IMG_NAME:          str = "saved.jpg"
-_STREAM_DIR:        str = "video"
 
 
 _DATA_CONFIG_PATH: str = os.path.realpath(
     os.path.join("..", *_DATA_DIR, _DATA_CONFIG_NAME)
+)
+_RESUME_MODEL_PATH: str = os.path.realpath(
+    os.path.join(*_RESUME_MODEL_DIR, _RESUME_MODEL_NAME)
 )
 _SAVE_MODEL_PATH:  str = os.path.realpath(
     os.path.join("..", _MODEL_DIR, _SAVE_MODEL_NAME)
@@ -59,9 +67,56 @@ _STREAM_PATH:      str = os.path.realpath(
 
 
 def train_save_YOLO() -> None:
-    model = YOLO(_MODEL_PATH)
-    trained_model = model.train(data=_DATA_CONFIG_PATH, epochs=100, imgsz=640)
+    model = YOLO(_RESUME_MODEL_PATH)
+    trained_model = model.train(
+        data=_DATA_CONFIG_PATH,
+        imgsz=640,
+        device=_DEVICE,
+        resume=True
+    )
     trained_model.save(_SAVE_MODEL_PATH)
+
+
+def realtime_acne_yolov11():
+    model = YOLO(_RESUME_MODEL_PATH)
+    cap = cv.VideoCapture(0)
+
+    cap.set(cv.CAP_PROP_FRAME_WIDTH, _FRAME_RES[0])
+    cap.set(cv.CAP_PROP_FRAME_HEIGHT, _FRAME_RES[1])
+
+    while True:
+        ret, frame = cap.read()
+
+        results = model.predict(frame)
+
+        if not ret:
+            print("failed to grab frame")
+            break
+
+        for r in results:
+            annotator = Annotator(frame)
+
+            boxes = r.boxes
+            for box in boxes:
+                b = box.xyxy[0]
+                annotator.box_label(b, '', color=_BOX_COLOR)
+
+        img = annotator.result()
+        cv.imshow('YOLOv11 Acne Detection', img)
+
+        if cv.waitKey(1) & _BIT_MASK == ord('q'):
+            break
+
+    cap.release()
+    cv.destroyAllWindows()
+
+
+"""
+def yolo_analyze(file_path: str) -> list[dict[str, typing.Any]]:
+    model = YOLO(_RESUME_MODEL_PATH)
+    result = model.predict(file_path)
+    return result
+"""
 
 
 def deep_face_video():
@@ -81,7 +136,8 @@ def deep_face_analyze(file_path: str) -> list[dict[str, typing.Any]]:
 def display_result(
         file_path: str,
         image_label: tk.Label,
-        result_label: tk.Label
+        result_label: tk.Label,
+        model: str,
 ):
 
     panel = Image.open(file_path)
@@ -91,7 +147,10 @@ def display_result(
     image_label.config(image=photo)
     image_label.image = photo
 
-    result = deep_face_analyze(file_path)[0]
+    if model == "deepface":
+        result = deep_face_analyze(file_path)[0]
+    elif model == "yolo":
+        result = yolo_analyze(file_path)[0]
 
     result_label.config(
         text=f"Age: {result['age']}\n"
@@ -132,7 +191,7 @@ def screenshot_video(
                     f"--------\n"
                 )
                 cv.destroyAllWindows()
-                display_result(_IMG_PATH, image_label, result_label)
+                display_result(_IMG_PATH, image_label, result_label, "none")
                 break
             elif key_input == ord('q'):
                 break
@@ -144,16 +203,17 @@ def screenshot_video(
         print(f"error! {e}!")
 
 
-def choose_file(image_label: tk.Label, result_label: tk.Label):
+def choose_file(image_label: tk.Label, result_label: tk.Label, model: str):
     chosen_file_path = filedialog.askopenfilename()
     if chosen_file_path:
-        display_result(chosen_file_path, image_label, result_label)
+        display_result(chosen_file_path, image_label, result_label, model)
 
 
 def display_window() -> None:
     """ ------------------ Initializing window ------------------ """
+
     root = tk.Tk()
-    root.title("Image Analyzer using DeepFace")
+    root.title("Acne Detection with YOLOv11 and DeepFace")
     root.geometry("x".join(str(val) for val in _ROOT_RES))
     root.configure(bg=_BG_COLOR)
 
@@ -209,7 +269,7 @@ def display_window() -> None:
 
     button = tk.Button(
         frame, text="Choose Image",
-        command=lambda: choose_file(image_label, result_label),
+        command=lambda: choose_file(image_label, result_label, "deepface"),
         bg="#4B4E5C", fg=_FG_COLOR, font=("Arial", 14)
     )
     button.pack(pady=20)
@@ -229,6 +289,23 @@ def display_window() -> None:
     )
     button.pack(pady=20)
 
+    button = tk.Button(
+        frame, text="Real-Time Acne Detection",
+        command=lambda: realtime_acne_yolov11(),
+        bg="#4B4E5C", fg=_FG_COLOR, font=("Arial", 14)
+    )
+    button.pack(pady=20)
+
+    """
+    button = tk.Button(
+        frame, text="Acne Detection with YOLOv11",
+        command=lambda: choose_file(image_label, result_label, "yolo"),
+
+        bg="#4B4E5C", fg=_FG_COLOR, font=("Arial", 14)
+    )
+    button.pack(pady=20)
+    """
+
     """ ------------------ Run window ------------------ """
 
     root.mainloop()
@@ -236,7 +313,7 @@ def display_window() -> None:
 
 def image_analyzer() -> None:
     try:
-        train_save_YOLO()
+        display_window()
     except KeyboardInterrupt as e:
         print(f"error! Video capture has exited abruptly! {e}")
 
