@@ -1,15 +1,13 @@
 import os
-import typing
-
 import tkinter as tk
-import cv2 as cv
+import typing
+from tkinter import filedialog
 
+import cv2 as cv
+from deepface import DeepFace
+from PIL import Image, ImageTk
 from ultralytics import YOLO
 from ultralytics.utils.plotting import Annotator
-
-from deepface import DeepFace
-from tkinter import filedialog
-from PIL import Image, ImageTk
 
 # ------------------ Constants ------------------ #
 
@@ -35,8 +33,8 @@ _STREAM_DIR: str = "video"
 
 _DATA_CONFIG_NAME:  str = "data.yaml"
 _MODEL_NAME:        str = "yolo11n.pt"
-_SAVE_MODEL_NAME:   str = "acne.pt"
 _RESUME_MODEL_NAME: str = "last.pt"
+_BEST_MODEL_NAME:   str = "best.pt"
 _ICON_NAME:         str = "logo.png"
 _IMG_NAME:          str = "saved.jpg"
 
@@ -47,8 +45,8 @@ _DATA_CONFIG_PATH: str = os.path.realpath(
 _RESUME_MODEL_PATH: str = os.path.realpath(
     os.path.join(*_RESUME_MODEL_DIR, _RESUME_MODEL_NAME)
 )
-_SAVE_MODEL_PATH:  str = os.path.realpath(
-    os.path.join("..", _MODEL_DIR, _SAVE_MODEL_NAME)
+_BEST_MODEL_PATH: str = os.path.realpath(
+    os.path.join(*_RESUME_MODEL_DIR, _BEST_MODEL_NAME)
 )
 _MODEL_PATH:       str = os.path.realpath(
     os.path.join("..", _MODEL_DIR, _MODEL_NAME)
@@ -66,19 +64,8 @@ _STREAM_PATH:      str = os.path.realpath(
 # ------------------ Models ------------------ #
 
 
-def train_save_YOLO() -> None:
-    model = YOLO(_RESUME_MODEL_PATH)
-    trained_model = model.train(
-        data=_DATA_CONFIG_PATH,
-        imgsz=640,
-        device=_DEVICE,
-        resume=True
-    )
-    trained_model.save(_SAVE_MODEL_PATH)
-
-
 def realtime_acne_yolov11():
-    model = YOLO(_RESUME_MODEL_PATH)
+    model = YOLO(_BEST_MODEL_PATH)
     cap = cv.VideoCapture(0)
 
     cap.set(cv.CAP_PROP_FRAME_WIDTH, _FRAME_RES[0])
@@ -109,14 +96,6 @@ def realtime_acne_yolov11():
 
     cap.release()
     cv.destroyAllWindows()
-
-
-"""
-def yolo_analyze(file_path: str) -> list[dict[str, typing.Any]]:
-    model = YOLO(_RESUME_MODEL_PATH)
-    result = model.predict(file_path)
-    return result
-"""
 
 
 def deep_face_video():
@@ -153,7 +132,7 @@ def display_result(
         result = yolo_analyze(file_path)[0]
 
     result_label.config(
-        text=f"Age: {result['age']}\n"
+        text=f"Age: {result['age']}\n" 
             f"Gender: { {k: float(v) for k, v in result['gender'].items()} }\n"
         f"Race: {result['dominant_race']}\n"
         f"Emotion: {result['dominant_emotion']}"
@@ -296,24 +275,42 @@ def display_window() -> None:
     )
     button.pack(pady=20)
 
-    """
-    button = tk.Button(
-        frame, text="Acne Detection with YOLOv11",
-        command=lambda: choose_file(image_label, result_label, "yolo"),
-
-        bg="#4B4E5C", fg=_FG_COLOR, font=("Arial", 14)
-    )
-    button.pack(pady=20)
-    """
-
     """ ------------------ Run window ------------------ """
 
     root.mainloop()
 
 
+def train_base_epoch():
+    model = YOLO(_RESUME_MODEL_PATH)
+    resume_model = model.train(
+        data=_DATA_CONFIG_PATH,
+        device=_DEVICE,
+        rect=True,
+        imgsz=640,  # Increasing input for better smaller object detection
+        epochs=200,
+        batch=-1,  # Dynamic batch size
+        amp=True,  # Mixed precision to speed up and memory during training
+        warmup_epochs=0,
+    )
+    resume_model.save(_SAVE_MODEL_PATH)
+
+
+def data_augmentation():
+    pass
+
+
+def cross_validate():
+    model = YOLO(_RESUME_MODEL_PATH)
+    results = model.val(plots=True)
+
+    print("Mean average precision at IoU=0.50:", results.box.map50)
+    print("Mean average precision at IoU=0.75:", results.box.map75)
+    print("Mean average precision for different IoU thresholds:", results.box.maps)
+
+
 def image_analyzer() -> None:
     try:
-        display_window()
+        train_base_epoch()
     except KeyboardInterrupt as e:
         print(f"error! Video capture has exited abruptly! {e}")
 
